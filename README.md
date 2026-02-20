@@ -490,7 +490,6 @@ San Jose State University
 
 ## Demo & Links
 
-- Live Demo: https://vedictai.onrender.com/
 - GitHub Repository: https://github.com/utkarsh9630/VedictAI
 - Documentation: See README for API docs
 - Portfolio: https://utkarsh9630.github.io/portfolio/
