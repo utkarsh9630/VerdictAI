@@ -1,6 +1,6 @@
 # main.py
 """
-DebateShield Lite - FastAPI entrypoint (MATCHES CURRENT REPO)
+VerdictAI - FastAPI entrypoint (MATCHES CURRENT REPO)
 
 This main.py is aligned with your actual codebase:
 - cod_agents.py exports: CoD_Agents with .run_debate(...)
@@ -17,7 +17,7 @@ import os
 import time
 from typing import Any, Dict, Optional, List
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
@@ -27,7 +27,7 @@ from you_search import YouSearcher
 from cod_agents import CoD_Agents
 from integrations import ActionEngine
 
-APP_TITLE = "DebateShield Lite"
+APP_TITLE = "VerdictAI"
 APP_VERSION = "0.1.0"
 
 app = FastAPI(title=APP_TITLE, version=APP_VERSION)
@@ -75,9 +75,9 @@ def _read_ui() -> str:
 
     return """
     <html>
-      <head><title>DebateShield Lite</title></head>
+      <head><title>VerdictAI</title></head>
       <body style="font-family: system-ui; padding: 24px;">
-        <h2>DebateShield Lite</h2>
+        <h2>VerdictAI</h2>
         <p><b>index.html</b> not found in project root.</p>
       </body>
     </html>
@@ -107,6 +107,13 @@ def _normalize_evidence(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 async def on_startup() -> None:
     # Creates claims table in file DB
     await memory.init_db()
+
+
+# Explicit HEAD handler so probes that use HEAD (e.g. UptimeRobot) receive 200
+@app.head("/")
+async def serve_ui_head() -> Response:
+    # HEAD responses should not include a body. Return 200 with empty body.
+    return Response(status_code=200)
 
 
 @app.get("/", response_class=HTMLResponse)
