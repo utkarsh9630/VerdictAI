@@ -228,7 +228,7 @@ async def analyze(req: AnalyzeRequest) -> JSONResponse:
 
     # 5) Store in memory
     try:
-        await memory.store_claim(response)
+        await memory.store_claim(response["claim"], response)
     except Exception:
         pass
 

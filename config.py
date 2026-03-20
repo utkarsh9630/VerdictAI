@@ -14,7 +14,7 @@ class Config:
     
     # App
     APP_ENV = os.getenv("APP_ENV", "dev")
-    DATABASE_PATH = os.getenv("DATABASE_PATH", "./debateshield.db")
+    DATABASE_PATH = os.getenv("DATABASE_PATH", "/tmp/verdictai.db")
     
     @classmethod
     def validate(cls):
