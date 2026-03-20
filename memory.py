@@ -4,11 +4,17 @@ import hashlib
 import json
 from datetime import datetime
 from typing import Optional, Dict, Any
-from fuzzywuzzy import fuzz
+from rapidfuzz import fuzz
 
 class Memory:
     def __init__(self, db_path: str):
         self.db_path = db_path
+        self._initialized = False
+
+    async def _ensure_init(self):
+        if not self._initialized:
+            await self.init_db()
+            self._initialized = True
     
     async def init_db(self):
         """Initialize the database schema"""
@@ -43,6 +49,7 @@ class Memory:
     
     async def find_similar_claim(self, claim: str, threshold: int = 85) -> Optional[Dict[str, Any]]:
         """Find a similar claim using fuzzy matching"""
+        await self._ensure_init()
         normalized = self.normalize_claim(claim)
         
         async with aiosqlite.connect(self.db_path) as db:
@@ -72,6 +79,7 @@ class Memory:
     
     async def store_claim(self, claim: str, verdict_data: Dict[str, Any]):
         """Store a new claim and its verdict"""
+        await self._ensure_init()
         claim_hash = self.hash_claim(claim)
         normalized = self.normalize_claim(claim)
         
