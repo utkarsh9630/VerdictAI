@@ -44,7 +44,7 @@ Built with Chain-of-Debate architecture for transparent, trustworthy AI fact-che
 - Evidence citations with source URLs
 
 **5. Smart Memory System**
-- SQLite database with fuzzy matching
+- SQLite database with fuzzy matching (via rapidfuzz)
 - Detects repeated/similar claims (85% similarity threshold)
 - Instant retrieval prevents redundant analysis
 - 100ms response time for cached claims vs 3-8s for new claims
@@ -99,29 +99,27 @@ User Input: "Drinking bleach cures COVID-19"
 ## Tech Stack
 
 **Backend Framework:**
-- FastAPI (Python) - Modern async web framework
-- Uvicorn - ASGI server
-- Pydantic - Data validation
+- FastAPI (Python) — Modern async web framework
+- Pydantic — Data validation
 
 **AI & ML:**
-- OpenAI GPT-4o-mini - Multi-agent reasoning
-- Chain-of-Debate architecture - Custom implementation
-- Structured prompt engineering - JSON response format
+- OpenAI GPT-4o-mini — Multi-agent reasoning
+- Chain-of-Debate architecture — Custom implementation
+- Structured prompt engineering — JSON response format
 
 **Evidence & Search:**
-- You.com Search API - Real-time web evidence retrieval
-- HTTPX - Async HTTP client
+- You.com Search API — Real-time web evidence retrieval
+- HTTPX — Async HTTP client
 - Custom evidence normalization pipeline
 
 **Data & Memory:**
-- SQLite + aiosqlite - Async database operations
-- FuzzyWuzzy + Levenshtein - Fuzzy string matching
-- MD5 hashing - Claim deduplication
+- SQLite + aiosqlite — Async database operations
+- rapidfuzz — Fuzzy string matching (replaces fuzzywuzzy)
+- MD5 hashing — Claim deduplication
 
 **Deployment:**
-- Render - Cloud hosting platform
-- Git-based CI/CD - Automatic deployments
-- Environment-based configuration
+- Vercel — Serverless cloud hosting
+- Git-based CI/CD — Automatic deployments on push
 
 **Frontend:**
 - Responsive HTML/CSS/JavaScript
@@ -138,6 +136,26 @@ User Input: "Drinking bleach cures COVID-19"
 - **Evidence Quality:** 5-8 sources per claim (supporting + refuting)
 - **Accuracy:** 92% alignment with professional fact-checking organizations
 - **Cost Efficiency:** <$0.05 per claim analysis
+
+---
+
+## Project Structure
+
+```
+VerdictAI/
+├── api/
+│   └── index.py            # Vercel entry point — exposes FastAPI app
+├── main.py                 # FastAPI application & routes
+├── cod_agents.py           # Chain-of-Debate agent implementations
+├── you_search.py           # You.com API integration
+├── memory.py               # SQLite memory system with fuzzy matching
+├── integrations.py         # Action engine (stub for future features)
+├── config.py               # Configuration management
+├── index.html              # Frontend UI
+├── requirements.txt        # Python dependencies
+├── vercel.json             # Vercel routing configuration
+└── .env                    # Environment variables (not in git)
+```
 
 ---
 
@@ -169,7 +187,6 @@ pip install -r requirements.txt
 
 4. **Set up environment variables:**
 ```bash
-# Create .env file
 cat > .env << EOF
 APP_ENV=dev
 DATABASE_PATH=./debateshield.db
@@ -191,39 +208,53 @@ uvicorn main:app --reload --port 8000
 Open http://localhost:8000 in your browser
 ```
 
-### Deployment to Render
+---
+
+## Deployment to Vercel
+
+### What was changed for Vercel compatibility
+
+| File | Change | Reason |
+|---|---|---|
+| `vercel.json` | Added — routes all requests to `api/index.py` | Vercel needs an explicit routing config |
+| `api/index.py` | Added — exports the FastAPI `app` object | Vercel's Python runtime speaks ASGI natively; just export the app |
+| `requirements.txt` | Replaced `fuzzywuzzy` + `Levenshtein` with `rapidfuzz` | `fuzzywuzzy` requires C compilation which fails on Vercel's runtime |
+| `config.py` | Default `DATABASE_PATH` changed to `/tmp/verdictai.db` | `/tmp` is the only writable directory on Vercel serverless |
+| `memory.py` | Added lazy `_ensure_init()` guard; updated fuzzy import | Vercel doesn't fire startup events — DB must self-initialize on first use |
+| `main.py` | Fixed `store_claim(response)` → `store_claim(response["claim"], response)` | Bug: method requires two args; was silently crashing on every analysis |
+
+> **Note on memory persistence:** SQLite in `/tmp` is ephemeral per serverless instance. The cache works within a session but won't persist long-term across cold starts. For persistent memory, connect a free-tier [Turso](https://turso.tech) or [Supabase](https://supabase.com) database via `DATABASE_URL`.
+
+### Deploy steps
 
 1. **Push to GitHub:**
 ```bash
 git add .
-git commit -m "Initial commit"
+git commit -m "Vercel deployment"
 git push origin main
 ```
 
-2. **Create Render service:**
-- Go to https://render.com
-- Connect your GitHub repository
-- Set build command: `pip install -r requirements.txt`
-- Set start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
+2. **Import to Vercel:**
+- Go to [vercel.com](https://vercel.com) → **Add New Project**
+- Import your GitHub repository
+- Vercel auto-detects Python
 
-3. **Add environment variables in Render dashboard:**
-```
-LLM_API_KEY=sk-your-openai-key
-LLM_MODEL=gpt-4o-mini
-YOU_API_KEY=ydc-sk-your-you-key
-APP_ENV=production
-DATABASE_PATH=/opt/render/project/src/debateshield.db
-```
+3. **Add environment variables** in Vercel → Settings → Environment Variables:
 
-4. **Deploy:**
-- Render automatically deploys on git push
-- Access your app at: `https://your-app.onrender.com`
+| Key | Value |
+|---|---|
+| `LLM_API_KEY` | Your OpenAI API key |
+| `LLM_MODEL` | `gpt-4o-mini` |
+| `YOU_API_KEY` | Your You.com API key |
+| `APP_ENV` | `production` |
+
+4. **Deploy** — Vercel builds and publishes automatically. Redeploys on every `git push`.
 
 ---
 
 ## API Documentation
 
-### Health Check Endpoint
+### Health Check
 
 ```bash
 GET /health
@@ -233,16 +264,15 @@ GET /health
 ```json
 {
   "ok": true,
-  "app": "DebateShield Lite",
+  "app": "VerdictAI",
   "version": "0.1.0",
   "env": "production",
-  "db_path": "./debateshield.db",
   "llm_configured": true,
   "you_configured": true
 }
 ```
 
-### Analyze Claim Endpoint
+### Analyze Claim
 
 ```bash
 POST /analyze
@@ -282,18 +312,9 @@ Content-Type: application/json
     ],
     "uncertainties": [],
     "debate_transcript": [
-      {
-        "agent": "verifier",
-        "message": "No credible medical sources support this claim"
-      },
-      {
-        "agent": "skeptic",
-        "message": "Strong evidence of harm; dangerous misinformation"
-      },
-      {
-        "agent": "moderator",
-        "message": "Verdict: FALSE with high confidence"
-      }
+      { "agent": "verifier", "message": "No credible medical sources support this claim" },
+      { "agent": "skeptic", "message": "Strong evidence of harm; dangerous misinformation" },
+      { "agent": "moderator", "message": "Verdict: FALSE with high confidence" }
     ]
   },
   "reply_templates": {
@@ -301,13 +322,8 @@ Content-Type: application/json
     "firm_mod": "This is dangerous misinformation. Never ingest bleach.",
     "friendly": "Hey, this isn't accurate. Bleach is toxic - please don't share."
   },
-  "memory": {
-    "hit": false,
-    "matched_claim_id": null
-  },
-  "meta": {
-    "latency_ms": 4520
-  }
+  "memory": { "hit": false, "matched_claim_id": null },
+  "meta": { "latency_ms": 4520 }
 }
 ```
 
@@ -315,166 +331,17 @@ Content-Type: application/json
 
 ## Use Cases
 
-### 1. Social Media Moderation
-- Detect viral misinformation before it spreads
-- Auto-generate fact-check responses for community notes
-- Monitor specific keywords or hashtags
-
-### 2. News & Journalism
-- Rapid fact-checking for breaking news
-- Evidence aggregation for journalists
-- Public trust through transparent reasoning
-
-### 3. Customer Support
-- Verify claims in support tickets
-- Auto-respond to common misconceptions
-- Escalate high-risk claims to human agents
-
-### 4. Healthcare Information
-- Flag dangerous health misinformation
-- Verify medical claims with authoritative sources
-- Protect vulnerable populations from false cures
-
-### 5. Financial Services
-- Detect investment scams and fraud
-- Verify financial news and rumors
-- Prevent panic-driven market decisions
-
-### 6. Corporate Communications
-- Monitor false claims about your company
-- Rapid response to misinformation
-- Brand reputation protection
-
----
-
-## Project Structure
-
-```
-DebateShield/
-├── main.py                 # FastAPI application entry point
-├── cod_agents.py          # Chain-of-Debate agent implementations
-├── you_search.py          # You.com API integration
-├── memory.py              # SQLite memory system with fuzzy matching
-├── integrations.py        # Action engine (stub for future features)
-├── config.py              # Configuration management
-├── index.html             # Frontend UI
-├── requirements.txt       # Python dependencies
-├── render.yaml            # Render deployment configuration
-├── .env                   # Environment variables (not in git)
-└── debateshield.db        # SQLite database (created on first run)
-```
-
----
-
-## Configuration Options
-
-### Context Parameters
-
-**Source** (affects trust level):
-- `user` / `social` - Low trust, requires stronger evidence
-- `news` / `blog` - Medium trust, still verify
-- `official` / `government` - Higher trust, cross-check
-
-**Audience**:
-- `public` - Careful messaging, consider impact
-- `internal` - More technical detail allowed
-
-**Urgency Hint** (affects action threshold):
-- `low` - Normal processing, no rush
-- `medium` - Standard evidence requirements
-- `high` - Lower bar for alerts, faster escalation
-
----
-
-## Upcoming Features
-
-### Workflow Actions & Integrations (Coming Soon)
-
-**Twitter/X Integration** (via Composio)
-- Real-time monitoring of Twitter for misinformation
-- Auto-reply with fact-checks to viral false claims
-- Thread generation with evidence and sources
-- Keyword-based monitoring (health, politics, finance)
-
-**Slack/Discord Moderation**
-- Monitor community channels for misinformation
-- Auto-alert moderators for high-risk claims
-- Inline fact-checking in conversations
-- Integration with existing moderation workflows
-
-**Intercom Customer Support**
-- Detect misinformation in support tickets
-- Auto-suggest corrections to agents
-- Track common misconceptions
-- Proactive customer education
-
-**Email Notifications**
-- Daily digest of detected misinformation
-- High-priority alerts for urgent claims
-- Weekly analytics reports
-- Custom notification rules
-
-**Live Monitoring Mode**
-- Continuous re-checking of claims
-- Track how evidence evolves over time
-- Alert on confidence changes
-- Automatic re-analysis scheduling
-
-**API Webhooks**
-- Custom webhook endpoints for integrations
-- Real-time notifications to external systems
-- Bidirectional sync with CMS platforms
-- Enterprise integration support
-
-**Enhanced Analytics**
-- Misinformation trend tracking
-- Topic clustering and categorization
-- Source reliability scoring
-- Verdicts drift over time visualization
-
-**Multi-Language Support**
-- Evidence retrieval in multiple languages
-- Translated response templates
-- Cross-language claim matching
-- Regional fact-check sources
+- **Social Media Moderation** — Detect and respond to viral misinformation
+- **News & Journalism** — Rapid fact-checking for breaking news
+- **Healthcare Information** — Flag dangerous health misinformation
+- **Financial Services** — Detect investment scams and fraud rumors
+- **Customer Support** — Verify claims in support tickets
 
 ---
 
 ## Academic Context
 
-Built as part of the Applied Data Intelligence MS program at San Jose State University, demonstrating:
-
-- **End-to-end ML system design** - Complete pipeline from data retrieval to user interface
-- **LLM application development** - Practical implementation of multi-agent systems
-- **RESTful API architecture** - Production-ready backend design
-- **Cloud deployment best practices** - Scalable deployment on Render
-- **Explainable AI (XAI) principles** - Transparent reasoning and audit trails
-
----
-
-## Contributing
-
-This is a hackathon/academic project. Feedback and suggestions welcome!
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
-
----
-
-## License
-
-MIT License - See LICENSE file for details
-
----
-
-## Acknowledgments
-
-- **OpenAI** - GPT-4 API for multi-agent reasoning
-- **You.com** - Real-time search API for evidence retrieval
-- **Render** - Cloud hosting platform
-- **San Jose State University** - Academic support and guidance
+Built as part of the Applied Data Intelligence MS program at San Jose State University, demonstrating end-to-end ML system design, LLM multi-agent application development, RESTful API architecture, cloud deployment, and Explainable AI (XAI) principles.
 
 ---
 
@@ -482,19 +349,10 @@ MIT License - See LICENSE file for details
 
 **Utkarsh Tripathi**
 - GitHub: [@utkarsh9630](https://github.com/utkarsh9630)
-- LinkedIn: [Profile](https://www.linkedin.com/in/tripathiutkarsh46/)
+- LinkedIn: [Utkarsh Tripathi](https://www.linkedin.com/in/tripathiutkarsh46/)
 - Email: tripathiutkarsh46@gmail.com
 
-MS Student - Applied Data Intelligence  
-San Jose State University
-
----
-
-## Demo & Links
-
-- GitHub Repository: https://github.com/utkarsh9630/VedictAI
-- Documentation: See README for API docs
-- Portfolio: https://utkarsh9630.github.io/portfolio/
+MS Student — Applied Data Intelligence, San Jose State University
 
 ---
 
