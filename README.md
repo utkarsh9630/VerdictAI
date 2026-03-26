@@ -13,6 +13,8 @@ VerdictAI is an AI-powered fact-checking system that:
 
 Built with Chain-of-Debate architecture for transparent, trustworthy AI fact-checking.
 
+# Live Demo: https://verdict-ai-jade.vercel.app/
+
 ---
 
 ## Key Features
